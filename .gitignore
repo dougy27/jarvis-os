@@ -1,0 +1,22 @@
+Python bytecode
+
+pycache/
+*.py[cod]
+*$py.class
+
+Environment
+
+.env
+venv/
+env/
+
+--- PERSONAL DATA (CRITICAL) ---
+
+Do not commit your personal life state or keys
+
+jarvis_state.json
+config.yaml
+
+System
+
+.DS_Store
