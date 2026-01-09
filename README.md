@@ -1,14 +1,12 @@
-# 🤵 Jarvis: The Executive OS
+# Jarvis: The Executive OS
 
 **Persistent State • Forensic Logic • Local Sovereignty**
 
-> Jarvis is not a chatbot; it is a **Cognitive Architecture** designed to function as a long-term executive assistant. Built for those who require **privacy and continuity**, Jarvis utilizes a custom **Forensic Probability Model (FPM)** to validate intent and a **Persistent JSON State** to maintain a continuous thread of your life across sessions.
-
-![Jarvis Operational Logic](Test%20Run.gif)
+> **Cognitive Architecture** designed to function as a long-term executive assistant. Built for those who require **privacy and continuity**, Jarvis utilizes a custom **Forensic Probability Model (FPM)** to validate intent and a **Persistent JSON State** to maintain a continuous thread of your life across sessions.
 
 ---
 
-## ⚡ Core Pillars
+## Core Pillars
 
 | Feature                     | Description                                                                                                                                              |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,7 +18,7 @@
 
 ---
 
-## 🛡️ The FPM (Forensic Probability Model) Layer
+## The FPM (Forensic Probability Model) Layer
 
 The FPM is the **digital conscience** of Jarvis. It evaluates six key variables to determine if a request is **Routine**, **Anomalous**, or **High-Risk** before it is ever processed by the LLM:
 
@@ -35,7 +33,7 @@ The FPM is the **digital conscience** of Jarvis. It evaluates six key variables 
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 jarvis-os/
@@ -52,7 +50,7 @@ jarvis-os/
 
 ---
 
-## 🚀 Installation
+##  Installation
 
 ### 1. Prerequisites
 
@@ -81,7 +79,7 @@ python jarvis_main.py
 
 ---
 
-## 🛡️ Privacy & Sovereignty
+##  Privacy & Sovereignty
 
 Jarvis is **Local-First**. Your state files, conversation history, and logic gates live **on your hardware**.
 
@@ -89,7 +87,7 @@ No telemetry. No cloud-bound memory. You **own the weights, and you own the data
 
 ---
 
-## ❤️ Support the Development
+##  Support the Development
 
 Building a cognitive architecture from scratch takes **time, coffee, and focus**.
 If Jarvis has improved your workflow or provided a safer way to interact with AI, consider supporting the project.
@@ -98,7 +96,7 @@ If Jarvis has improved your workflow or provided a safer way to interact with AI
 
 ---
 
-## 📜 License
+##  License
 
 Distributed under the **MIT License**. See [LICENSE](LICENSE) for more information.
 
