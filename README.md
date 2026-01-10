@@ -5,7 +5,7 @@
 
 ![Dashboard Screenshot](images/dashboard_screenshot.png)
 
-Cognitive Architecture designed to function as a long-term executive assistant. Built for those who require privacy and continuity, Jarvis utilizes a custom **Forensic Probability Model v5-Ultima (FPMv5-U)** with rolling threat accumulation and a **Persistent JSON State** to maintain a continuous thread of your life across sessions.
+A private, long-term personal assistant that runs entirely on your own computer. Unlike standard AI chatbots that start every conversation with a blank slate, this system maintains a permanent memory of your tasks, schedule, and preferences in a local file that persists even after a reboot.
 
 ---
 ## 📊 Performance Benchmarks (v2.1.0)
