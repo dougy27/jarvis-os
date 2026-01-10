@@ -1,3 +1,7 @@
 ollama
 PyYAML
 requests
+flask
+flask_cors
+numpy
+apscheduler

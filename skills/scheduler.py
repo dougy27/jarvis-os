@@ -10,144 +10,152 @@ class SchedulerSkill:
 
     def match(self, text):
         low = text.lower()
-        # Fix: Guard against routing task-related deletes to scheduler
-        if "task" in low:
-            return False
-            
-        triggers = ["schedule", "agenda", "lock in", "cancel", "delete", "remove", "rename"]
-        if any(t in low for t in triggers): return True
-        has_time = self.TIME_RE.search(text)
-        actions = ["add", "book", "make", "set", "create", "plan", "going", "meet", "remind"]
-        if has_time and any(w in low for w in actions): return True
-        return False
+        if any(t in low for t in ["schedule", "agenda", "calendar", "clear", "week", "upcoming"]): return True
+        if ("delete" in low or "remove" in low) and any(x in low for x in ["event", "appointment", "schedule"]): return True
+        # Catch numerical deletes if focus is already schedule
+        if self.state.last_focus == "schedule" and re.match(r"^(delete|remove|done|complete|finish)\s+\d+$", low):
+            return True
+        return self.TIME_RE.search(text) is not None
 
     def execute(self, text):
         low = text.lower()
         
-        if "lock in" in low or "confirm plan" in low:
-            self._handle_lock_in()
-            return
-
-        if "schedule" in low or "agenda" in low:
-            self._handle_view(low)
-            return
-
-        if any(low.startswith(x) for x in ["cancel", "remove schedule", "delete schedule", "remove event", "delete", "remove"]):
+        # 1. Handle explicit clearing
+        if "clear" in low:
+            self._handle_clear(low)
+            
+        # 2. Handle deletions/removals
+        elif any(x in low for x in ["delete", "remove", "cancel", "done", "finish"]):
             self._handle_remove(low)
-            return
-
-        if low.startswith("rename"):
-            self._handle_rename(low)
-            return
-
-        self._handle_add(text)
+            
+        # 3. Handle additions (Prioritized over view if 'add' and a time are present)
+        elif "add" in low and self.TIME_RE.search(text):
+            self._handle_add(text)
+            
+        # 4. Handle viewing the schedule/agenda
+        elif any(t in low for t in ["schedule", "agenda", "calendar", "week", "upcoming"]):
+            self._handle_view(low)
+            
+        # 5. Fallback to add (matches based on TIME_RE from match() logic)
+        else:
+            self._handle_add(text)
 
     def _get_iso_date(self, text):
         today = datetime.now().date()
         low = text.lower()
-        
         if "tomorrow" in low: return (today + timedelta(days=1)).isoformat()
-        if "today" in low: return today.isoformat()
-        
-        for i, day_name in enumerate(self.WEEKDAYS):
-            if day_name in low:
-                today_idx = today.weekday()
-                target_idx = i
-                delta = (target_idx - today_idx) % 7
+        for i, day in enumerate(self.WEEKDAYS):
+            if day in low:
+                delta = (i - today.weekday()) % 7
                 if delta <= 0: delta += 7
                 return (today + timedelta(days=delta)).isoformat()
-        
         return today.isoformat()
 
     def _handle_view(self, text):
-        target_date = self._get_iso_date(text)
-        appts = [a for a in self.state.appointments if a.get("date") == target_date]
-        appts.sort(key=lambda x: x['time'])
+        low = text.lower()
+        today = datetime.now().date()
         
-        date_label = "Today"
-        if target_date != datetime.now().date().isoformat():
-            date_label = datetime.fromisoformat(target_date).strftime("%A")
+        # --- RANGE VIEW LOGIC (Week Ahead) ---
+        if "week" in low or "upcoming" in low:
+            start_date = today
+            end_date = today + timedelta(days=7)
+            
+            # Find all appointments in the next 7 days
+            upcoming = []
+            for a in self.state.appointments:
+                try:
+                    appt_date = datetime.fromisoformat(a.get("date")).date()
+                    if start_date <= appt_date <= end_date:
+                        upcoming.append(a)
+                except ValueError:
+                    continue
+            
+            upcoming.sort(key=lambda x: (x['date'], x['time']))
+            self.state.view_buffer = list(upcoming)
+            
+            if not upcoming:
+                self.ui.say(f"Your agenda is clear for the upcoming week.")
+            else:
+                msg = []
+                current_day = None
+                for i, a in enumerate(upcoming):
+                    day_label = datetime.fromisoformat(a['date']).strftime("%A, %b %d")
+                    if day_label != current_day:
+                        msg.append(f"\n📅 {day_label}:")
+                        current_day = day_label
+                    msg.append(f"   {i+1}. {a['time']} — {a['title']}")
+                
+                self.ui.say("\n".join(msg).strip())
+            return
 
+        # --- SINGLE DAY VIEW LOGIC ---
+        d_iso = self._get_iso_date(text)
+        # Filter and sort
+        appts = sorted([a for a in self.state.appointments if a.get("date") == d_iso], key=lambda x: x['time'])
+        
+        # POPULATE VIEW BUFFER: This allows "delete 1" to work relative to this specific list
+        self.state.view_buffer = list(appts)
+        
+        date_label = datetime.fromisoformat(d_iso).strftime("%A") if d_iso != datetime.now().date().isoformat() else "Today"
+        
         if not appts:
-            self.ui.say(f"{date_label}'s Agenda:\nCurrently clear.")
+            self.ui.say(f"{date_label}'s Agenda is currently clear.")
         else:
             msg = "\n".join([f"{i+1}. {a['time']} — {a['title']}" for i, a in enumerate(appts)])
             self.ui.say(f"{date_label}'s Agenda:\n{msg}")
 
     def _handle_remove(self, text):
-        parts = text.split(" ", 1)
-        if len(parts) < 2:
-            self.ui.error("Please specify a valid event number or range.")
-            return
-
-        target = parts[1].strip().lower()
-
-        # Fix: Support for single index or ranges like "1 to 4" or "1-3"
-        if target.isdigit():
-            start_idx = end_idx = int(target)
-        else:
-            m = re.match(r"^(\d+)\s*(?:-|\s+to\s+)\s*(\d+)$", target)
-            if not m:
-                self.ui.error("Specify a number or range (e.g., 'delete 2' or 'delete 1 to 4').")
+        m = re.search(r"(\d+)", text)
+        if m:
+            idx = int(m.group(1)) - 1
+            
+            # Use the anchored view_buffer if it belongs to the schedule
+            if self.state.last_focus == "schedule" and self.state.view_buffer:
+                items = self.state.view_buffer
+            else:
+                # Fallback to current day if no buffer exists
+                d_iso = self._get_iso_date(text)
+                items = sorted([a for a in self.state.appointments if a.get("date") == d_iso], key=lambda x: x['time'])
+            
+            if 0 <= idx < len(items):
+                to_remove = items[idx]
+                # Specific removal using title AND date from the buffer object
+                self.state.remove_appointment(to_remove['title'], to_remove.get('date'))
+                self.ui.success(f"Removed '{to_remove['title']}' from {to_remove.get('date', 'schedule')}")
+                # Clear buffer to prevent double-deletion errors
+                self.state.view_buffer = []
                 return
-            start_idx, end_idx = int(m.group(1)), int(m.group(2))
-            if start_idx > end_idx: start_idx, end_idx = end_idx, start_idx
+                
+        self.ui.error("Specify a valid event number. You may need to view the agenda first.")
 
-        today_iso = datetime.now().date().isoformat()
-        appts = [a for a in self.state.appointments if a.get("date") == today_iso]
-        appts.sort(key=lambda x: x['time'])
-        
-        removed_any = False
-        titles_removed = []
-
-        # Iterate in reverse to avoid index shifting
-        for idx in range(end_idx, start_idx - 1, -1):
-            zero_idx = idx - 1
-            if 0 <= zero_idx < len(appts):
-                to_remove = appts[zero_idx]
-                self.state.remove_appointment(to_remove['title'])
-                titles_removed.append(to_remove['title'])
-                removed_any = True
-
-        if not removed_any:
-            self.ui.error("Event number(s) not found in today's view.")
+    def _handle_clear(self, text):
+        d_iso = self._get_iso_date(text)
+        original_count = len(self.state.appointments)
+        self.state.appointments = [a for a in self.state.appointments if a.get("date") != d_iso]
+        if len(self.state.appointments) < original_count:
+            self.state.save()
+            self.state.view_buffer = []
+            self.ui.success(f"Schedule for {d_iso} has been wiped.")
         else:
-            self.ui.success(f"Removed: {', '.join(titles_removed)}")
+            self.ui.say(f"Schedule for {d_iso} was already clear.")
 
     def _handle_add(self, text):
         m = self.TIME_RE.search(text)
         if m:
-            h = m.group(1)
-            m_val = m.group(2) or "00"
-            p = m.group(3) or ""
+            h, mn, p = int(m.group(1)), m.group(2) or "00", (m.group(3) or "").lower()
+            if p == "pm" and h < 12: h += 12
+            elif p == "am" and h == 12: h = 0
+            elif not p and 1 <= h <= 7: h += 12
             
-            hour = int(h)
-            p_low = p.lower()
-            if p_low == "pm" and hour < 12: hour += 12
-            elif p_low == "am" and hour == 12: hour = 0
-            elif not p_low and 1 <= hour <= 7: hour += 12
+            t_str, d_iso = f"{h:02d}:{mn}", self._get_iso_date(text)
             
-            formatted_time = f"{hour:02d}:{m_val}"
-            date_iso = self._get_iso_date(text)
+            clean = text.replace(m.group(0), "")
+            clean = re.sub(r'\b(add|schedule|remind me|at|for|tonight|today|tomorrow|this|my|calendar|agenda)\b', '', clean, flags=re.I)
+            for d in self.WEEKDAYS:
+                clean = re.sub(rf'\b{d}\b', '', clean, flags=re.I)
             
-            clean_text = text.replace(m.group(0), "")
-            clean_text = re.sub(r'\b(add|schedule|book|set|create|plan|going to|remind me to|remind me|at|to|for|tonight)\b', '', clean_text, flags=re.I)
-            days_pattern = '|'.join(self.WEEKDAYS + ['today', 'tomorrow'])
-            clean_text = re.sub(r'\b(' + days_pattern + r')\b', '', clean_text, flags=re.I)
-            
-            clean_text = clean_text.replace('"', '').replace("'", "").strip()
-            title = re.sub(r'\s+', ' ', clean_text)
-            if not title: title = "Appointment"
-            
-            self.state.add_appointment(time=formatted_time, title=title, date=date_iso)
-            
-            pretty_date = datetime.fromisoformat(date_iso).strftime("%A")
-            if date_iso == datetime.now().date().isoformat(): pretty_date = "Today"
-                
-            self.ui.success(f"Locked in: '{title}' for {pretty_date} at {formatted_time}")
-
-    def _handle_rename(self, text):
-        self.ui.success("Rename logic stub.")
-
-    def _handle_lock_in(self):
-        self.ui.success("Lock-in logic stub.")
+            title = clean.strip() or "Appointment"
+            self.state.add_appointment(t_str, title, d_iso)
+            # Additions reset buffer focus
+            self.state.view_buffer = []
+            self.ui.success(f"Locked in: '{title}' at {t_str} for {d_iso}")

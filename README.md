@@ -1,55 +1,193 @@
-Jarvis: The Executive OS
 
-Persistent State. Forensic Logic. Local Sovereignty.
+#  Jarvis: The Executive OS
 
-Jarvis is a local-first cognitive architecture designed to function as a long-term executive assistant. Unlike stateless chatbots, Jarvis utilizes a Forensic Probability Model (FPM) to validate intent and a Persistent JSON State to maintain a continuous thread of your life across sessions.
+**Persistent State • Forensic Logic • Local Sovereignty**
 
-⚡ Core Pillars
+![Dashboard Screenshot](images/dashboard_screenshot.png)
 
-Forensic Logic Gate: Uses a weighted sigmoid-based reasoner (fpm_engine.py) to calculate the "Engineered Intent" of a request. It flags high-risk or anomalous commands before they execute.
+Cognitive Architecture designed to function as a long-term executive assistant. Built for those who require privacy and continuity, Jarvis utilizes a custom **Forensic Probability Model v5-Ultima (FPMv5-U)** with rolling threat accumulation and a **Persistent JSON State** to maintain a continuous thread of your life across sessions.
 
-Persistent JSON Memory: A structured jarvis_state.json tracks your schedule, tasks, and history. It survives resets and bootstraps every session with your "Ground Truth."
+---
+## 📊 Performance Benchmarks (v2.1.0)
 
-Deterministic Skill Routing: A modular JarvisRouter that dispatches intents to specific Python skills (Scheduler, Tasks, Weather, etc.) only after FPM clearance.
+Tested against the Prompt Injection & Benign Dataset (500 samples).
 
-Background Executive: A dedicated thread monitors your state.json in real-time, triggering notifications (via ntfy.sh) and local alerts.
+| Metric         | Result   | Description |
+|----------------|---------|------------|
+| Accuracy       | 97.4%   | Overall correct classification rate (Benign vs. Malicious). |
+| ASR            | 3.6%    | Attack Success Rate. Only 3.6% of attacks bypassed the FPMv5-U gate. |
+| False Positives| 4       | Only 4 benign prompts were incorrectly blocked (0.8% error rate). |
+| Latency (P95)  | ~5.2s   | Response time for the slowest 5% of queries (running locally). |
 
-Polite Protocol: A refined, formal personality ("Good evening, Master") that prioritizes utility over conversational fluff.
+![Benchmark Screenshot](images/benchmark_screenshot.png)
+---
 
-🧠 The FPM Layer
+## Core Pillars
 
-The Forensic Probability Model (FPM) is the digital conscience of Jarvis. It evaluates six key variables (I, A, M, T, Δ, D) to determine if a request is "Routine," "Anomalous," or "High-Risk" before it is ever processed by the LLM.
+| Feature                 | Description |
+|-------------------------|------------|
+|  **Forensic Logic Gate** | Hybrid threat detection combining AI-based semantic analysis with regex safety nets. Rolling risk scores track conversation-level patterns. |
+|  **Persistent Memory**   | Structured `jarvis_state.json` tracks your schedule, tasks, and history with 15-level undo stack. Survives resets and bootstraps every session with your "Ground Truth". |
+|  **Skill Routing**       | Modular router dispatches intents to specific deterministic skills (Scheduler, Tasks, Notifications) only after FPM clearance. |
+|  **Background Executive** | APScheduler-powered thread monitors your life-state in real-time, triggering notifications (via ntfy.sh) and scheduled reminders. |
+|  **Neural Console**      | React-based `dashboard.html` provides a futuristic, glass-morphism UI for visualizing state, managing tasks, and executing commands via a HUD. |
+|  **Polite Protocol**      | Refined formal personality with optional therapy and humor engines. `"Standing by. Sleep well, Master."` |
 
-🛠️ Project Structure
+---
 
-jarvis_main.py: The kernel. Manages the I/O loop and background monitor thread.
+## The FPMv5-Ultima Layer
 
-jarvis_core.py: The central nervous system (State management & Routing).
+**Digital conscience of Jarvis**, employing a **three-tier defense strategy**:
 
-fpm_engine.py: The weighted logic gate for security and consistency.
+| Security Architecture     | Layer                          | Purpose |
+|----------------------------|-------------------------------|---------|
+| Pre-Check                  | Valid skill commands           | Bypass threat accumulation |
+| Advanced AI Analysis       | Optional Ollama-based semantic embedding | Intent classification (High-Risk/Suspicious/Routine) |
+| Safety Net                 | Regex-based keyword monitoring | Critical threat detection (jailbreak, exfiltration, manipulation) |
 
-jarvis_state.json: The "Long-term Memory" (Auto-generated).
+**Threat Categories**
 
-skills/: Modular capability directory (Briefing, Weather, Scheduler, etc.).
+- **Jailbreak Attempts:** `"ignore previous"`, `"developer mode"`, `"without rules"`  
+- **Data Exfiltration:** Attempts to extract passwords, keys, or credentials  
+- **Manipulation:** Commands that could cause financial or data harm  
 
-🚀 Installation & Usage
+**Rolling Threat Accumulation**
 
-Install Dependencies:
+- Threat scores decay **80% per turn**  
+- Valid skill commands reduce accumulated risk **30%**  
+- Probationary logic allows benign inputs even with elevated history scores  
 
-pip install -r requirements.txt
+---
 
+## Project Structure
 
-Setup Config: Create a config.yaml and add your ntfy_topic for remote alerts.
+```
 
-Boot:
+jarvis-os/
+├── jarvis_main.py           # Kernel: I/O loop & Background Monitor
+├── jarvis_core.py           # Nervous System: State & Routing
+├── forensic_reasoner.py     # Conscience: FPMv5-Ultima Logic (Optional)
+├── jarvis_ui.py             # Interface: ANSI Formatting & UI
+├── dashboard.html           # Visual Cortex: React-based Neural Console
+├── jarvis_state.json        # Memory: Auto-generated Life Archive (Git Ignored)
+├── config.yaml              # Configuration: ntfy topic, location settings
+├── benchmark.py             # Security benchmarking suite
+├── benchmark_metrics.py     # Metric calculation logic
+└── skills/                  # Muscles: Modular Capability Directory
+├── briefing.py          # Executive summaries with weather
+├── conversation.py      # Cognitive core (Ollama/Llama)
+├── notifications.py     # Smart butler reminders with APScheduler
+├── scheduler.py         # Appointment management
+├── tasks.py             # Priority-based task tracking
+└── ...                  # Other modular skills
 
+````
+
+---
+
+## 🚀 Installation
+
+### 1. Prerequisites
+- Python 3.10+ (3.14+ for latest features)  
+- Ollama (running llama3.1:8b) - Optional for advanced forensics  
+
+### 2. Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/dougy27/jarvis-os.git
+cd jarvis-os
+
+# Install dependencies
+pip install pyyaml apscheduler pandas
+
+# Create your config
+# Ensure config.yaml contains your ntfy_topic and preferred location
+````
+
+### 3. Boot
+
+```bash
 python jarvis_main.py
+```
 
+### 4. Verify Security (Benchmark)
 
-🛡️ Privacy Notice
+```bash
+# Run the benchmark suite against a dataset
+python benchmark.py path/to/dataset.jsonl
+```
 
-Jarvis is Local-First. Your state.json and conversation history never leave your machine unless you've configured a remote notification service. Ensure you do not commit your personal state.json to public repositories.
+---
 
-📜 License
+## 💬 Usage Examples
+
+**Immediate Actions**
+
+* `"ping me"` - Test notification connectivity
+* `"list tasks"` - View current task queue
+* `"agenda"` - Show upcoming appointments
+
+**Dashboard**
+
+* Open `dashboard.html` for a visual HUD
+
+**Smart Reminders**
+
+* `"remind me in 30 minutes to check the oven"`
+* `"notify me at 5pm that dinner is ready"`
+
+**Life Management**
+
+* `"schedule meeting tomorrow at 2pm"`
+* `"add task: finish project report"`
+* `"delete 3"` - Context-aware deletion
+
+**Security Controls**
+
+* `"reset threat"` - Clear security threat score
+* `"clear security"` - Alternative reset command
+
+---
+
+## 🔐 Privacy & Sovereignty
+
+* **Local-First:** state files, conversation history, and logic gates live on your hardware
+* **Graceful Degradation:** operates even if advanced forensics or personality engines fail
+* **No telemetry, no cloud memory** – You own the weights and data
+
+---
+
+## ☕ Support the Development
+
+Building a cognitive architecture takes time, coffee, and focus.
+If Jarvis has improved your workflow, consider supporting:
+[Buy Me a Coffee](https://buymeacoffee.com/dougy27)
+
+---
+
+## 📜 License
 
 Distributed under the MIT License. See LICENSE for more information.
+
+---
+
+## 🏗️ Architecture Highlights
+
+**State Management**
+
+* Automatic Persistence: 2-second debounce prevents excessive disk writes
+* Undo System: 15-level snapshot stack
+* Smart Deduplication: Automatic removal of duplicate appointments
+
+**Context Intelligence**
+
+* Conversation Tracking: Maintains last 50 entries
+* Suppression Logic: Prevents repetition
+* Proactive Alerts: Reminders for upcoming appointments
+
+**Skill Extension**
+
+* Add capabilities via `match()` and `execute()` methods, register in router
+
+**Version:** v2.1.0 (Forensic Core w/ Benchmark Suite)

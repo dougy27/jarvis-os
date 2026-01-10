@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Jarvis Neural Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Core Dependencies -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        * { box-sizing: border-box; }
+        
+        html, body { 
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body { 
+            font-family: 'JetBrains Mono', monospace; 
+            background-color: #020617; 
+            color: #f8fafc; 
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #root { 
+            min-height: 100vh; 
+            width: 100%;
+        }
+
+        .glass { 
+            background: rgba(15, 23, 42, 0.7); 
+            backdrop-filter: blur(12px); 
+            border: 1px solid rgba(51, 65, 85, 0.3); 
+        }
+
+        .glow-blue { box-shadow: 0 0 40px rgba(59, 130, 246, 0.1); }
+        .dot-pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        
+        .edit-btn, .delete-btn { opacity: 0; transition: opacity 0.2s; }
+        .group:hover .edit-btn, .group:hover .delete-btn { opacity: 1; }
+        
+        /* MOBILE TOUCH OPTIMIZATION */
+        @media (max-width: 1024px) {
+            .edit-btn, .delete-btn { 
+                opacity: 1 !important; 
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                pointer-events: auto !important;
+                position: relative;
+                z-index: 10;
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+            }
+            
+            /* Ensure button container is also above text */
+            .shrink-0 {
+                position: relative;
+                z-index: 5;
+            }
+            
+            /* Prevent text from blocking button touches */
+            .task-text, .appt-text {
+                pointer-events: none;
+            }
+            
+            button { 
+                min-height: 44px; 
+                min-width: 44px; 
+                touch-action: manipulation;
+            }
+            input { font-size: 16px; }
+        }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const ContextEngine = {
+            validate: (data) => ({
+                chat_history: data?.chat_history || [],
+                therapy_data: data?.therapy_data || { emotions: { neutral: 1 } },
+                appointments: data?.appointments || [],
+                task_memory: data?.task_memory || []
+            })
+        };
+
+        const App = () => {
+            const [state, setState] = useState(null);
+            const [suggestions, setSuggestions] = useState([]);
+            const [cmd, setCmd] = useState('');
+            const [status, setStatus] = useState('connecting');
+            const [isUserScrolling, setIsUserScrolling] = useState(false);
+            
+            // Interaction States
+            const [editingAppt, setEditingAppt] = useState(null);
+            const [editingTask, setEditingTask] = useState(null);
+            const [newTask, setNewTask] = useState(null);
+            const [newAppt, setNewAppt] = useState(null);
+            
+            const chatEndRef = useRef(null);
+            const chatContainerRef = useRef(null);
+
+            const getBaseUrl = () => {
+                const origin = window.location.origin;
+                const isSandbox = origin.includes('goog') || origin === 'null' || origin.startsWith('file');
+                return isSandbox ? 'http://127.0.0.1:8000' : origin;
+            };
+
+            const loadState = async () => {
+                try {
+                    const res = await fetch(`${getBaseUrl()}/api/state`);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    setState(ContextEngine.validate(data));
+                    
+                    const sugRes = await fetch(`${getBaseUrl()}/api/suggestions`);
+                    const sugData = await sugRes.json();
+                    setSuggestions(sugData.suggestions || []);
+                    
+                    setStatus('online');
+                } catch (err) { 
+                    setStatus('offline');
+                }
+            };
+
+            useEffect(() => {
+                loadState();
+                const interval = setInterval(loadState, 5000);
+                return () => clearInterval(interval);
+            }, []);
+
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [state, suggestions, newTask, newAppt, editingAppt, editingTask]);
+
+            const sendCommand = async () => {
+                if (!cmd.trim()) return;
+                const currentCmd = cmd;
+                setCmd('');
+                try {
+                    await fetch(`${getBaseUrl()}/api/command`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({command: currentCmd})
+                    });
+                    loadState();
+                } catch (err) { console.error("Command Error:", err); }
+            };
+
+            const handleUndo = async () => {
+                const res = await fetch(`${getBaseUrl()}/api/undo`, { method: 'POST' });
+                if (res.ok) loadState();
+            };
+
+            // Task Logic
+            const createTask = async () => {
+                if (!newTask?.text?.trim()) return;
+                try {
+                    await fetch(`${getBaseUrl()}/api/tasks`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            text: newTask.text,
+                            priority: newTask.priority || 'medium'
+                        })
+                    });
+                    setNewTask(null);
+                    loadState();
+                } catch (err) { console.error('Create Task Error:', err); }
+            };
+
+            const editTask = (id) => {
+                setEditingTask({ ...state.task_memory[id], id });
+            };
+
+            const saveTask = async () => {
+                if (!editingTask) return;
+                await fetch(`${getBaseUrl()}/api/tasks/${editingTask.id}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        text: editingTask.text,
+                        priority: editingTask.priority 
+                    })
+                });
+                setEditingTask(null);
+                loadState();
+            };
+
+            const deleteTask = async (id) => {
+                await fetch(`${getBaseUrl()}/api/tasks/${id}`, { method: 'DELETE' });
+                loadState();
+            };
+
+            // Appointment Logic
+            const createAppointment = async () => {
+                if (!newAppt?.title?.trim() || !newAppt?.date || !newAppt?.time) return;
+                try {
+                    await fetch(`${getBaseUrl()}/api/appointments`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            title: newAppt.title,
+                            date: newAppt.date,
+                            time: newAppt.time,
+                            location: newAppt.location || ''
+                        })
+                    });
+                    setNewAppt(null);
+                    loadState();
+                } catch (err) { console.error('Create Appointment Error:', err); }
+            };
+
+            const editAppointment = (id) => setEditingAppt({ ...state.appointments[id], id });
+
+            const saveAppointment = async () => {
+                if (!editingAppt) return;
+                await fetch(`${getBaseUrl()}/api/appointments/${editingAppt.id}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(editingAppt)
+                });
+                setEditingAppt(null);
+                loadState();
+            };
+
+            const deleteAppointment = async (id) => {
+                await fetch(`${getBaseUrl()}/api/appointments/${id}`, { method: 'DELETE' });
+                loadState();
+            };
+
+            if (status === 'offline') return (
+                <div className="flex flex-col items-center justify-center h-screen bg-[#020617]">
+                    <div className="w-12 h-12 border-4 border-red-500/10 border-t-red-500 rounded-full animate-spin mb-6"></div>
+                    <h2 className="text-red-400 font-bold uppercase tracking-widest text-xs">Neural Link Severed</h2>
+                </div>
+            );
+
+            if (!state) return (
+                <div className="flex flex-col items-center justify-center h-screen bg-[#020617]">
+                    <div className="text-blue-400 text-[10px] font-bold uppercase tracking-[0.5em] animate-pulse mb-4">Establishing Uplink</div>
+                    <div className="w-32 h-1 bg-slate-900 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 w-1/3 animate-[loading_1.5s_infinite_linear]"></div>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 min-h-screen flex flex-col">
+                    <header className="flex justify-between items-center border-b border-slate-800 pb-4 md:pb-6 shrink-0">
+                        <div>
+                            <h1 className="text-xl md:text-2xl font-black tracking-tighter text-white uppercase flex items-center gap-3">
+                                JARVIS <span className="text-blue-500 font-mono text-xs bg-blue-500/10 px-2 py-0.5 rounded">v9.7</span>
+                            </h1>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full dot-pulse"></span>
+                                <p className="text-[8px] md:text-[9px] text-slate-500 uppercase tracking-widest font-bold">Neural Uplink Active</p>
+                            </div>
+                        </div>
+                        <button onClick={() => handleUndo()} className="bg-slate-800 hover:bg-slate-700 text-[10px] px-3 py-2 rounded-xl text-slate-400 font-bold uppercase tracking-wider flex items-center gap-2 transition-colors">
+                            <i data-lucide="undo" className="w-3 h-3"></i> Undo
+                        </button>
+                    </header>
+
+                    {/* Proactive Suggestions */}
+                    {suggestions.length > 0 && (
+                        <div className="glass p-4 rounded-2xl border-l-4 border-l-yellow-500 shrink-0 animate-in slide-in-from-top duration-500">
+                            <div className="flex items-center gap-2 mb-2">
+                                <i data-lucide="lightbulb" className="w-4 h-4 text-yellow-400"></i>
+                                <span className="text-xs font-bold text-yellow-400 uppercase tracking-widest">Proactive Insights</span>
+                            </div>
+                            <div className="space-y-1">
+                                {suggestions.map((s, i) => <div key={i} className="text-[10px] text-slate-300">• {s}</div>)}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+                        {/* Chat Console */}
+                        <div className="lg:col-span-7 flex flex-col glass rounded-2xl md:rounded-3xl min-h-[400px] shadow-2xl relative overflow-hidden">
+                            <div className="bg-slate-800/40 p-3 md:p-4 border-b border-slate-700 flex justify-between items-center shrink-0">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-300 flex items-center gap-2">
+                                    <i data-lucide="terminal" className="w-3 h-3 text-blue-400"></i> Command Console
+                                </span>
+                            </div>
+                            <div ref={chatContainerRef} className="flex-1 p-4 md:p-6 overflow-y-auto space-y-4 max-h-[600px]">
+                                {state.chat_history.map((msg, i) => (
+                                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[85%] p-3 md:p-4 rounded-xl shadow-lg ${
+                                            msg.role === 'user' 
+                                            ? 'bg-blue-600 text-white rounded-tr-none' 
+                                            : 'bg-slate-800/90 text-slate-100 rounded-tl-none border border-slate-700/50'
+                                        }`}>
+                                            <p className="opacity-50 text-[8px] uppercase font-bold mb-1">{msg.role}</p>
+                                            <pre className="whitespace-pre-wrap font-mono text-xs md:text-sm leading-relaxed">{msg.content}</pre>
+                                        </div>
+                                    </div>
+                                ))}
+                                <div ref={chatEndRef} />
+                            </div>
+                            <div className="p-3 md:p-4 bg-slate-900/50 border-t border-slate-800 flex gap-2 shrink-0">
+                                <input 
+                                    value={cmd}
+                                    onChange={e => setCmd(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && sendCommand()}
+                                    placeholder="Execute directive..." 
+                                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 font-mono transition-all text-white outline-none"
+                                />
+                                <button onClick={() => sendCommand()} className="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center">
+                                    <i data-lucide="zap" className="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Sidebar */}
+                        <div className="lg:col-span-5 space-y-6 flex flex-col">
+                            {/* Telemetry */}
+                            <div className="glass p-6 rounded-3xl shrink-0">
+                                <h3 className="text-[10px] font-bold text-slate-500 uppercase mb-4 tracking-widest flex items-center gap-2">
+                                    <i data-lucide="activity" className="w-3 h-3 text-purple-400"></i> Telemetry
+                                </h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {Object.entries(state.therapy_data.emotions).map(([k, v]) => (
+                                        <div key={k} className="space-y-1">
+                                            <div className="flex justify-between text-[8px] uppercase font-bold text-slate-500">
+                                                <span>{k}</span>
+                                                <span>{(v * 100).toFixed(0)}%</span>
+                                            </div>
+                                            <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-400 transition-all duration-700" style={{width: `${v*100}%`}}></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Directives Section */}
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="check-square" className="w-3 h-3 text-emerald-400"></i> Directives
+                                    </h3>
+                                    <button 
+                                        onClick={() => setNewTask({ text: '', priority: 'medium' })}
+                                        className="bg-emerald-600 hover:bg-emerald-500 p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center"
+                                        title="Add Task"
+                                    >
+                                        <i data-lucide="plus" className="w-3 h-3 text-white"></i>
+                                    </button>
+                                </div>
+                                {state.task_memory.map((t, i) => (
+                                    <div key={i} className="glass p-3 rounded-xl border-l-2 border-l-slate-700 group flex justify-between items-center relative overflow-hidden">
+                                        <div className="text-[10px] text-slate-300 flex-1 pr-2 task-text leading-relaxed">{t.text}</div>
+                                        <div className="flex gap-2 shrink-0 relative z-10">
+                                            <button 
+                                                onClick={() => editTask(i)} 
+                                                className="edit-btn hover:bg-slate-700 rounded text-base lg:text-[10px] min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:p-2 p-3 flex items-center justify-center"
+                                            >✏️</button>
+                                            <button 
+                                                onClick={() => deleteTask(i)} 
+                                                className="delete-btn hover:bg-red-500/20 rounded text-base lg:text-[10px] min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:p-2 p-3 flex items-center justify-center"
+                                            >🗑️</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Agenda Section */}
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                        <i data-lucide="calendar" className="w-3 h-3 text-blue-400"></i> Priority Agenda
+                                    </h3>
+                                    <button 
+                                        onClick={() => setNewAppt({ title: '', date: '', time: '', location: '' })}
+                                        className="bg-blue-600 hover:bg-blue-500 p-1.5 rounded-lg transition-all active:scale-95 flex items-center justify-center"
+                                        title="Add Appointment"
+                                    >
+                                        <i data-lucide="plus" className="w-3 h-3 text-white"></i>
+                                    </button>
+                                </div>
+                                {state.appointments.map((a, i) => (
+                                    <div key={i} className="glass p-3 rounded-xl border-l-2 border-l-blue-500 group flex justify-between items-center relative overflow-hidden">
+                                        <div className="flex-1 min-w-0 pr-2 appt-text">
+                                            <div className="text-[10px] font-bold text-slate-100 truncate">{a.title}</div>
+                                            <div className="text-[8px] text-slate-500 uppercase mt-0.5">{a.date} • {a.time}</div>
+                                        </div>
+                                        <div className="flex gap-2 shrink-0 relative z-10">
+                                            <button onClick={() => editAppointment(i)} className="edit-btn hover:bg-slate-700 rounded text-base lg:text-[10px] min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:p-2 p-3 flex items-center justify-center">✏️</button>
+                                            <button onClick={() => deleteAppointment(i)} className="delete-btn hover:bg-red-500/20 rounded text-base lg:text-[10px] min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 lg:p-2 p-3 flex items-center justify-center">🗑️</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* MODALS */}
+                    {editingTask && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={() => setEditingTask(null)}>
+                            <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                                <h3 className="text-sm font-bold uppercase tracking-wider border-b border-slate-800 pb-3 text-white">Edit Directive</h3>
+                                <div className="space-y-4">
+                                    <input value={editingTask.text} onChange={e => setEditingTask({...editingTask, text: e.target.value})} onKeyDown={e => e.key === 'Enter' && saveTask()} autoFocus className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none focus:border-emerald-500" />
+                                    <select value={editingTask.priority} onChange={e => setEditingTask({...editingTask, priority: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono">
+                                        <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-3"><button onClick={() => saveTask()} className="flex-1 bg-emerald-600 py-3 rounded-xl text-xs font-bold uppercase active:scale-95">Save</button><button onClick={() => setEditingTask(null)} className="flex-1 bg-slate-800 py-3 rounded-xl text-xs font-bold uppercase">Cancel</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {editingAppt && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={() => setEditingAppt(null)}>
+                            <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                                <h3 className="text-sm font-bold uppercase tracking-wider border-b border-slate-800 pb-3 text-white">Edit Appointment</h3>
+                                <div className="space-y-4">
+                                    <input value={editingAppt.title} onChange={e => setEditingAppt({...editingAppt, title: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <input type="date" value={editingAppt.date} onChange={e => setEditingAppt({...editingAppt, date: e.target.value})} className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white" />
+                                        <input type="time" value={editingAppt.time} onChange={e => setEditingAppt({...editingAppt, time: e.target.value})} className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white" />
+                                    </div>
+                                </div>
+                                <div className="flex gap-3"><button onClick={() => saveAppointment()} className="flex-1 bg-blue-600 py-3 rounded-xl text-xs font-bold uppercase active:scale-95">Save</button><button onClick={() => setEditingAppt(null)} className="flex-1 bg-slate-800 py-3 rounded-xl text-xs font-bold uppercase">Abort</button></div>
+                            </div>
+                        </div>
+                    )}
+
+                    {newTask && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={() => setNewTask(null)}>
+                            <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                                <h3 className="text-sm font-bold uppercase tracking-wider border-b border-slate-800 pb-3 text-white">New Directive</h3>
+                                <input placeholder="Directive text..." onChange={e => setNewTask({...newTask, text: e.target.value})} onKeyDown={e => e.key === 'Enter' && createTask()} autoFocus className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none focus:border-emerald-500" />
+                                <button onClick={() => createTask()} className="w-full bg-emerald-600 py-3 rounded-xl text-xs font-bold uppercase active:scale-95">Initialize</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {newAppt && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={() => setNewAppt(null)}>
+                            <div className="glass rounded-2xl p-6 w-full max-w-md space-y-4 animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                                <h3 className="text-sm font-bold uppercase tracking-wider border-b border-slate-800 pb-3 text-white">New Appointment</h3>
+                                <input placeholder="Event title..." onChange={e => setNewAppt({...newAppt, title: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono outline-none" />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <input type="date" onChange={e => setNewAppt({...newAppt, date: e.target.value})} className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white" />
+                                    <input type="time" onChange={e => setNewAppt({...newAppt, time: e.target.value})} className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-xs text-white" />
+                                </div>
+                                <button onClick={() => createAppointment()} className="w-full bg-blue-600 py-3 rounded-xl text-xs font-bold uppercase active:scale-95">Schedule</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <footer className="flex justify-between items-center text-[8px] text-slate-600 font-mono tracking-widest uppercase mt-4 shrink-0">
+                        <div className="flex gap-6">
+                            <span>Signal: 98%</span>
+                            <span className="hidden sm:inline">Memory: 1.4GB / 32GB</span>
+                        </div>
+                        <span className="dot-pulse">STARK_QUANTUM_CORE</span>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
